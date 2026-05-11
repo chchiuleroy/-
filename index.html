@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>尾牙抽獎系統 - Lucky Draw</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; background: #f3f4f6; }
+        .lucky-bg { background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%); }
+        .slot-machine { height: 120px; overflow: hidden; position: relative; }
+        .slot-item { height: 120px; display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: bold; }
+        .winner-card { animation: popIn 0.5s cubic-bezier(0.26, 0.53, 0.74, 1.48); }
+        @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800">
+
+    <!-- Header -->
+    <header class="lucky-bg text-white py-8 shadow-lg text-center">
+        <h1 class="text-4xl font-bold tracking-widest">🧧 尾牙抽獎系統 🧧</h1>
+        <p class="mt-2 opacity-80">資料來源：Excel (.xlsx)</p>
+    </header>
+
+    <main class="container mx-auto px-4 py-8 max-w-[1600px]">
+        
+        <!-- Step 1: Upload -->
+        <section id="upload-section" class="bg-white rounded-2xl shadow-md p-8 text-center mb-8 border-2 border-dashed border-red-200 max-w-2xl mx-auto">
+            <div class="mb-4 text-5xl">📊</div>
+            <h2 class="text-2xl font-bold mb-4 text-red-700">第一步：上傳名單</h2>
+            <p class="text-gray-500 mb-6">請上傳包含兩個 Sheet 的 Excel 檔案<br>(Sheet1: 員工名單 | Sheet2: 獎項項目)</p>
+            <input type="file" id="excel-file" accept=".xlsx" class="hidden" />
+            <label for="excel-file" class="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-full font-bold cursor-pointer transition-all shadow-lg inline-block">
+                選擇 Excel 檔案
+            </label>
+        </section>
+
+        <!-- Step 2: Draw Area -->
+        <section id="draw-section" class="hidden space-y-8">
+            <div class="flex flex-col md:flex-row gap-8 items-start">
+                
+                <!-- Left: Control (Fixed Position) -->
+                <div class="w-full md:w-1/4 bg-white rounded-3xl shadow-xl p-8 border-t-8 border-red-600 flex flex-col justify-between min-h-[500px] sticky top-8 z-10">
+                    <div>
+                        <h3 class="text-2xl font-bold mb-6 flex items-center">
+                            <span class="mr-3 text-3xl">🎁</span> 選擇獎項
+                        </h3>
+                        <select id="prize-select" class="w-full p-4 border-2 border-gray-100 rounded-2xl mb-6 text-xl focus:ring-4 focus:ring-red-500 outline-none transition-all">
+                            <!-- Options filled by JS -->
+                        </select>
+                        <div id="prize-info" class="text-lg text-gray-600 mb-8 px-2 bg-red-50 p-4 rounded-xl">
+                            剩餘名額：<span id="prize-count" class="font-bold text-red-600 text-2xl">-</span>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <button id="draw-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white text-3xl font-black py-8 rounded-3xl shadow-2xl transition-all transform hover:scale-105 active:scale-95 mb-8">
+                            開始抽獎
+                        </button>
+                        
+                        <div class="pt-6 border-t border-gray-100">
+                            <div class="flex justify-between text-sm text-gray-400 font-bold">
+                                <span>總人數：<span id="total-staff">0</span></span>
+                                <span>剩餘人數：<span id="remaining-staff">0</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Animation & Result -->
+                <div class="w-full md:w-3/4 flex flex-col gap-8">
+                    <!-- Animation Box -->
+                    <div class="bg-white rounded-3xl shadow-xl p-10 flex flex-col items-center justify-center min-h-[400px] border-t-8 border-yellow-500 relative overflow-hidden">
+                        <div id="slot-container" class="w-full text-center">
+                            <div class="text-gray-400 text-2xl mb-8 font-bold tracking-widest">LUCKY DRAW</div>
+                            <div class="slot-machine bg-gray-50 rounded-3xl border-4 border-dashed border-gray-200 shadow-inner h-48 flex items-center justify-center">
+                                <div id="slot-list" class="w-full transition-transform duration-100">
+                                    <div class="slot-item text-5xl md:text-8xl text-gray-300">? ? ?</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Final Result View -->
+                        <div id="result-view" class="hidden text-center winner-card w-full py-4">
+                            <div class="text-red-500 text-3xl font-black mb-6 tracking-widest">✨ 恭喜中獎 ✨</div>
+                            <div id="winner-prize" class="inline-block px-10 py-4 bg-yellow-400 text-white rounded-full font-bold mb-10 text-3xl shadow-lg"></div>
+                            <div id="winners-container" class="flex flex-wrap justify-center gap-6 w-full px-2">
+                                <!-- Winners will be injected here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- History (Now inside the scrolling area) -->
+                    <div class="bg-white rounded-3xl shadow-xl p-8 border-t-8 border-blue-500">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-2xl font-bold flex items-center">
+                                <span class="mr-3">🏆</span> 中獎名單
+                            </h3>
+                            <button onclick="exportResults()" class="bg-blue-50 text-blue-600 px-6 py-2 rounded-full font-bold hover:bg-blue-100 transition-all">
+                                匯出名單 (CSV)
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-50 text-gray-500 uppercase text-sm">
+                                    <tr>
+                                        <th class="px-6 py-4 rounded-l-xl">獎項</th>
+                                        <th class="px-6 py-4">中獎者</th>
+                                        <th class="px-6 py-4 rounded-r-xl">時間</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-body" class="divide-y divide-gray-100">
+                                    <!-- Records filled by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <audio id="win-sound" src="https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3" preload="auto"></audio>
+
+    <script>
+        let employees = [];
+        let remainingEmployees = [];
+        let prizes = [];
+        let winners = [];
+        let isDrawing = false;
+
+        const fileInput = document.getElementById('excel-file');
+        const uploadSection = document.getElementById('upload-section');
+        const drawSection = document.getElementById('draw-section');
+        const prizeSelect = document.getElementById('prize-select');
+        const drawBtn = document.getElementById('draw-btn');
+        const historyBody = document.getElementById('history-body');
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const data = evt.target.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+
+                // Sheet 1: Employees
+                const sheet1Name = workbook.SheetNames[0];
+                const sheet1 = XLSX.utils.sheet_to_json(workbook.Sheets[sheet1Name]);
+                // 假設第一張 Sheet 的第一欄或是包含 "名" 字眼的欄位是姓名
+                employees = sheet1.map(row => {
+                    const keys = Object.keys(row);
+                    const nameKey = keys.find(k => k.includes('名')) || keys[0];
+                    const compKey = keys.find(k => k.includes('公司')) || keys.find(k => k.includes('單位'));
+                    return {
+                        name: row[nameKey],
+                        company: (row[compKey] || "").substring(0, 2)
+                    };
+                }).filter(emp => emp.name);
+                
+                remainingEmployees = [...employees];
+
+                // Sheet 2: Prizes
+                const sheet2Name = workbook.SheetNames[1];
+                if (sheet2Name) {
+                    const sheet2 = XLSX.utils.sheet_to_json(workbook.Sheets[sheet2Name]);
+                    prizes = sheet2.map(row => {
+                        const keys = Object.keys(row);
+                        const nameKey = keys.find(k => k.includes('獎項')) || keys[0];
+                        const countKey = keys.find(k => k.includes('數量')) || keys[1];
+                        return {
+                            name: row[nameKey],
+                            count: parseInt(row[countKey]) || 0,
+                            initialCount: parseInt(row[countKey]) || 0
+                        };
+                    });
+                }
+
+                initUI();
+            };
+            reader.readAsBinaryString(file);
+        });
+
+        function initUI() {
+            uploadSection.classList.add('hidden');
+            drawSection.classList.remove('hidden');
+            
+            renderPrizeOptions();
+            updateStats();
+        }
+
+        function renderPrizeOptions() {
+            const currentSelected = prizeSelect.value;
+            prizeSelect.innerHTML = prizes.map((p, i) => {
+                const isFinished = p.count <= 0;
+                const displayName = isFinished ? `̶${p.name} (已抽完)` : `${p.name} (剩餘 ${p.count} 名)`;
+                return `<option value="${i}" ${isFinished ? 'disabled class="text-gray-400"' : ''} ${currentSelected == i ? 'selected' : ''}>${displayName}</option>`;
+            }).join('');
+        }
+
+        function updateStats() {
+            document.getElementById('total-staff').textContent = employees.length;
+            document.getElementById('remaining-staff').textContent = remainingEmployees.length;
+            
+            const selectedPrize = prizes[prizeSelect.value];
+            if (selectedPrize) {
+                document.getElementById('prize-count').textContent = selectedPrize.count;
+            }
+        }
+
+        prizeSelect.addEventListener('change', updateStats);
+
+        drawBtn.addEventListener('click', () => {
+            if (isDrawing) return;
+            
+            const selectedIdx = prizeSelect.value;
+            const prize = prizes[selectedIdx];
+
+            if (!prize || prize.count <= 0) {
+                alert('該獎項名額已用完！請選擇其他獎項。');
+                return;
+            }
+            if (remainingEmployees.length <= 0) {
+                alert('所有員工都已經中獎（或名單已空）！');
+                return;
+            }
+
+            startDrawAnimation(prize);
+        });
+
+        function startDrawAnimation(prize) {
+            isDrawing = true;
+            drawBtn.disabled = true;
+            document.getElementById('slot-container').classList.remove('hidden');
+            document.getElementById('result-view').classList.add('hidden');
+
+            const slotList = document.getElementById('slot-list');
+            const duration = 2000; 
+            const interval = 80;
+            let elapsed = 0;
+
+            const timer = setInterval(() => {
+                const randomIdx = Math.floor(Math.random() * remainingEmployees.length);
+                const randomEmp = remainingEmployees[randomIdx];
+                slotList.innerHTML = `<div class="slot-item text-4xl">${randomEmp.name}</div>`;
+                elapsed += interval;
+
+                if (elapsed >= duration) {
+                    clearInterval(timer);
+                    finishDraw(prize);
+                }
+            }, interval);
+        }
+
+        function finishDraw(prize) {
+            const drawCount = Math.min(prize.count, remainingEmployees.length);
+            const currentWinners = [];
+            const now = new Date();
+            const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+            for (let i = 0; i < drawCount; i++) {
+                const winnerIdx = Math.floor(Math.random() * remainingEmployees.length);
+                const winner = remainingEmployees.splice(winnerIdx, 1)[0];
+                
+                const record = { prize: prize.name, name: winner.name, time: timeStr };
+                currentWinners.push(winner);
+                winners.unshift(record);
+            }
+            
+            prize.count -= drawCount;
+
+            // UI Update
+            document.getElementById('slot-container').classList.add('hidden');
+            document.getElementById('result-view').classList.remove('hidden');
+            document.getElementById('winner-prize').textContent = prize.name;
+            
+            const container = document.getElementById('winners-container');
+            container.innerHTML = currentWinners.map(emp => `
+                <div class="bg-white border-2 border-yellow-400 p-6 rounded-2xl shadow-lg winner-card min-w-[180px] flex flex-col items-center justify-center transition-all hover:scale-105">
+                    <div class="text-3xl md:text-4xl font-black text-gray-800 whitespace-nowrap px-4 drop-shadow-sm">
+                        ${emp.name}
+                    </div>
+                </div>
+            `).join('');
+            
+            updateHistory();
+            renderPrizeOptions();
+            updateStats();
+            
+            // Play Sound
+            const sound = document.getElementById('win-sound');
+            sound.currentTime = 0;
+            sound.play().catch(e => console.log("音效播放被瀏覽器攔截，請點擊頁面任一處後重試。"));
+            
+            // Voice Output
+            const msg = new SpeechSynthesisUtterance("恭喜中獎");
+            msg.lang = 'zh-TW';
+            window.speechSynthesis.speak(msg);
+            
+            // Effects
+            const count = 200;
+            const defaults = { origin: { y: 0.7 } };
+
+            function fire(particleRatio, opts) {
+                confetti({
+                    ...defaults,
+                    ...opts,
+                    particleCount: Math.floor(count * particleRatio)
+                });
+            }
+
+            fire(0.25, { spread: 26, startVelocity: 55 });
+            fire(0.2, { spread: 60 });
+            fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+            fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+            fire(0.1, { spread: 120, startVelocity: 45 });
+
+            // Auto Save Result
+            setTimeout(autoSaveCSV, 1000); // 延遲1秒存檔，讓動畫先跑完
+
+            isDrawing = false;
+            drawBtn.disabled = false;
+        }
+
+        function autoSaveCSV() {
+            if (winners.length === 0) return;
+            
+            // BOM for Excel Chinese support
+            let csvContent = "\ufeff獎項,中獎者,時間\n"; 
+            
+            winners.forEach(w => {
+                csvContent += `${w.prize},${w.name},${w.time}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hour = String(now.getHours()).padStart(2, '0');
+            const minute = String(now.getMinutes()).padStart(2, '0');
+            const second = String(now.getSeconds()).padStart(2, '0');
+            
+            // 檔名格式：中獎名單_20260209_143005.csv
+            const filename = `中獎名單_${year}${month}${day}_${hour}${minute}${second}.csv`;
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function updateHistory() {
+            historyBody.innerHTML = winners.map(w => `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 font-bold text-red-600">${w.prize}</td>
+                    <td class="px-6 py-4 text-gray-800 font-medium">${w.name}</td>
+                    <td class="px-6 py-4 text-gray-400 text-sm font-mono">${w.time}</td>
+                </tr>
+            `).join('');
+        }
+
+        function exportResults() {
+            if (winners.length === 0) return;
+            let csv = "獎項,中獎者,時間\n";
+            winners.forEach(w => {
+                csv += `${w.prize},${w.name},${w.time}\n`;
+            });
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `中獎名單_${new Date().toLocaleDateString()}.csv`;
+            link.click();
+        }
+    </script>
+</body>
+</html>
